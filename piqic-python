@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import json
+import pprint
+
+import piq
+
+
+# variant item, tag, value
+def vi(variant):
+    return variant.items()[0]
+def vt(variant):
+    return vi(variant)[0]
+def vv(variant):
+    return vi(variant)[1]
+
+
+class Piqi(object):
+    typedef_list = []
+    index = {}
+
+    def __init__(self, piqi_json):
+        self.typedef_list = piqi_json.get('typedef', [])
+
+        self.index = {}
+        for x in self.typedef_list:
+            type_tag, typedef = vi(x)
+            name = typedef['name']
+            self.index[name] = (type_tag, typedef)
+
+
+def print_iolist(l):
+    def print_iolist_item(x):
+        if isinstance(x, basestring):
+            sys.stdout.write(x)
+        elif isinstance(x, list):
+            print_iolist(x)
+        else:
+            assert False
+    for x in l:
+        print_iolist_item(x)
+
+
+def gen_types_piqi(piqi):
+    return [gen_types_typedef(piqi, x) for x in piqi.typedef_list]
+
+
+def gen_types_typedef(piqi, x):
+    tag, value = vi(x)
+
+    name = value['name']
+
+    # TODO: snake to CamelCase
+    pyname = gen_name(name)
+
+    # TODO, FIXME: unalias
+    piqi_class = 'Piqi.' + tag.capitalize()
+
+    return [
+        'class ', pyname, '(', piqi_class, '): pass\n'
+    ]
+
+
+def gen_parse_piqi(piqi):
+    return [gen_parse_typedef(piqi, x) for x in piqi.typedef_list]
+
+
+def gen_parse_typedef(piqi, x):
+    tag, value = vi(x)
+
+    name = value['name']
+    pyname = gen_name(name)
+
+    return [
+        'def parse_', pyname, '(x):\n'
+        '    return parse(\'', name, '\', x)\n'
+    ]
+
+
+def gen_name(x):
+    return x.replace('-', '_')
+
+
+def parse_piqi_bundle(json_data):
+    return json_data
+
+
+def main():
+    filename = sys.argv[1]
+
+    piqi_executable = os.environ.get('PIQI', 'piqi')
+    command = piqi_executable + ' compile -t json ' + filename
+
+    data = os.popen(command).read()
+    piqi_bundle_json = json.loads(data)
+
+    # TODO, XXX: support imported specs? potentially, via nested classes each
+    # corresponding to a piqi module
+    piqi_json = piqi_bundle_json['piqi'][0]
+    piqi = Piqi(piqi_json)
+
+    code = [
+        'import piq\n',
+        'import piqi\n',
+        '\n',
+        'typedef_index =\\\n', pprint.pformat(piqi.index), '\n'
+        '\n',
+
+        # TODO, XXX: do we actually need to type each parsed value to its own
+        # class? We can do it if necessary by including classes in the index
+        #
+        #gen_types_piqi(piqi),
+        #'\n',
+
+        'def parse(typename, x):\n',
+        '    return piqi.parse(typename, x, typedef_index)\n',
+        '\n',
+        gen_parse_piqi(piqi),
+    ]
+    print_iolist(code)
+
+
+if __name__ == '__main__':
+    main()
