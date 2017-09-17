@@ -141,7 +141,7 @@ def parse_obj(typename, x, try_mode=False, nested_variant=False, labeled=False, 
         elif type_tag == 'list':
             return parse_list(typedef, x)
         elif type_tag == 'variant':
-            return parse_variant(typedef, x, try_mode=try_mode, nested_variant=nested_vairant)
+            return parse_variant(typedef, x, try_mode=try_mode, nested_variant=nested_variant)
         elif type_tag == 'enum':
             return parse_enum(typedef, x, try_mode=try_mode, nested_variant=nested_variant)
         elif type_tag == 'alias':
@@ -344,12 +344,15 @@ def find_first_parsed_field(t, field_type, l):
     res = None
     rem = []
     for x in l:
-        obj = try_parse_field(t, field_type, x)
-        if obj:
-            res = obj
-            break
-        else:
+        if res:
+            # already found => copy the reminder
             rem.append(x)
+        else:
+            obj = try_parse_field(t, field_type, x)
+            if obj:  # found
+                res = obj
+            else:
+                rem.append(x)
     return res, rem
 
 
