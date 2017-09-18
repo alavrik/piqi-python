@@ -91,9 +91,66 @@ def transform_expand_splices(node):
                 new_items.extend(item.expand())
             else:
                 new_items.append(transform_expand_splices(item))
-        node.items = new_items
+        return List(new_items, node.loc)
+    elif isinstance(node, Named):
+        new_value = transform_expand_splices(node.value)
+        return Named(node.name, node.loc, new_value)
+    elif isinstance(node, Splice):
+        # XXX: perform such validation earlier, e.g. in make_node?
+        raise ParseError(
+                node.loc,
+                "splices are only allowed in lists"
+        )
+    else:
+        return node
+
+
+# transform a.b ... name chain into .a (.b ...) cons
+def transform_expand_names(node):
+    if isinstance(node, List):
+        new_items = [transform_expand_names(item) for item in node.items]
+        return List(new_items, node.loc)
+    elif isinstance(node, Named):
+        new_value = transform_expand_names(node.value)
+        node = Named(node.name, node.loc, new_value)
+        return expand_named(node)
+    elif isinstance(node, Splice):
+        assert False  # splices should be expanded before names
+    elif isinstance(node, Name):
+        return expand_name(node)
+    elif isinstance(node, Scalar):
+        return node
+    else:
+        assert False
+
+
+def expand_named(node):
+    name_parts = split_name(node.name)
+    if len(name_parts) == 1:
+        return node
+    else:
+        return make_named_chain(name_parts, node.value, node.loc)
+
+
+def expand_name(node):
+    name_parts = split_name(node.name)
+    if len(name_parts) == 1:
+        return node
+    else:
+        value = Name(name_parts[-1], node.loc)
+        return make_named_chain(name_parts[:-1], value, node.loc)
+
+
+def make_named_chain(name_parts, value, loc):
+    node = value
+    for name in reversed(name_parts):
+        node = Named(name, loc, node)
 
     return node
+
+
+def split_name(name):
+    return name.split('.')
 
 
 # value of one of the primitive Piq types
@@ -170,8 +227,7 @@ def parse(x, expand_splices=False, expand_names=False):
     if expand_splices:
         node = transform_expand_splices(node)
 
-    # TODO, FIXME: expand name chains
     if expand_names:
-        pass
+        node = transform_expand_names(node)
 
     return node
