@@ -8,7 +8,7 @@ class ObjectProxy(wrappers.ObjectProxy):
 
     @property
     def __loc__(self):
-	return self._self_loc
+        return self._self_loc
 
     def __call__(self, *args, **kwargs):
         return self.__wrapped__(*args, **kwargs)

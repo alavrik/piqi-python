@@ -10,7 +10,7 @@ class ObjectProxy(wrappers.ObjectProxy):
 
     @property
     def __loc__(self):
-	return self._self_loc
+        return self._self_loc
 
     @property
     def piqi_type(self):
@@ -182,7 +182,7 @@ def parse_record(t, x, labeled=False):
     global _depth
     _depth += 1
     # NOTE: pass locating information as a separate parameter since empty
-    # list is unboxed and doesn't provide correct location information *)
+    # list is unboxed and doesn't provide correct location information
     res = do_parse_record(t, l, loc=loc)
     _depth -= 1;
     return res
@@ -250,7 +250,7 @@ def do_parse_flag(t, l, loc=None):
              # flag is considered missing/unset when its value is false
              return make_scalar(False, loc), rem
         else:
-	     # there are no other possible representations of flags *)
+             # there are no other possible representations of flags
              assert False
 
 
@@ -545,7 +545,7 @@ def parse_option_by_type(t, x, try_mode=False):
         # try_mode = false
         # 
         # by doing this, we allow using --foo bar instead of --foo.bar in
-        # relaxed piq parsing and getopt modes *)
+        # relaxed piq parsing and getopt modes
         if isinstance(x, piq.Scalar) and isinstance(x.value, basestring):
             word = x.value
             if (word == option_name or word == t.get('piq_alias')) and piq_relaxed_parsing and not try_mode:
