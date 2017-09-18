@@ -71,6 +71,8 @@ def make_node(x, is_inside_list=False):
         # XXX: support iterables?
         items = [make_node(item, is_inside_list=True) for item in x]
         return List(items, x.__loc__)
+    elif hasattr(x, '__piq__'):
+        return make_node(x.__piq__())
     else:
         raise ParseError(
                 x.__loc__,
