@@ -66,14 +66,11 @@ def gen_record(x):
     field_spec_list = record_spec['field']
     fields = []
     for field_spec in field_spec_list:
-        value = gen_field(field_spec, x)
+        skip, value = gen_field(field_spec, x)
 
-        if value is None or (value == [] and field_spec['mode'] == 'repeated'):
-            if omit_missing_field(field_spec):
-                continue
-
-        json_name = piqi_of_json.json_name_of_field(field_spec)
-        fields.append((json_name, value))
+        if not skip:
+            json_name = piqi_of_json.json_name_of_field(field_spec)
+            fields.append((json_name, value))
 
     return collections.OrderedDict(fields)
 
@@ -82,27 +79,38 @@ def gen_field(field_spec, record):
     field_name = piqi.make_field_name(field_spec)
     field_value = getattr(record, field_name)
     field_mode = field_spec['mode']
+    omit_missing = omit_missing_field(field_spec)
 
     if field_mode == 'repeated':
         assert isinstance(field_value, list)
 
-        return [gen_obj(x) for x in field_value]
+        skip = (omit_missing and field_value == [])
+
+        return skip, [gen_obj(x) for x in field_value]
 
     elif field_mode == 'required':
         assert (field_value is not None)
 
-        return gen_obj(field_value)
+        skip = False
+        return skip, gen_obj(field_value)
 
     elif field_mode == 'optional':
         if field_value is None:
-            return None
+            skip = omit_missing
+
+            return skip, None
+
         elif field_spec.get('type') is None:  # flag
             # TODO, XXX: we want to revisit flag handling, should they be really
             # treated specially or they are just a shorthand for optional bool
             # with default = false
-            return None
+            skip = (omit_missing and field_value == False)
+
+            return skip, field_value
+
         else:
-            return gen_obj(field_value)
+            skip = False
+            return skip, gen_obj(field_value)
     else:
         assert False
 
