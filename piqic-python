@@ -74,8 +74,8 @@ def gen_parse_typedef(piqi, x):
     pyname = gen_name(name)
 
     return [
-        'def parse_', pyname, '(x):\n'
-        '    return parse(\'', name, '\', x)\n'
+        'def parse_', pyname, '(x, **kwargs):\n'
+        '    return parse(x, "', name, '", **kwargs)\n'
     ]
 
 
@@ -102,7 +102,6 @@ def main():
     piqi = Piqi(piqi_json)
 
     code = [
-        'import piq\n',
         'import piqi\n',
         '\n',
         'typedef_index =\\\n', pprint.pformat(piqi.index), '\n'
@@ -114,8 +113,8 @@ def main():
         #gen_types_piqi(piqi),
         #'\n',
 
-        'def parse(typename, x):\n',
-        '    return piqi.parse(typename, x, typedef_index)\n',
+        'def parse(x, typename, format="piq"):\n',
+        '    return piqi.parse(x, __name__, typename, format)\n',
         '\n',
         gen_parse_piqi(piqi),
     ]
