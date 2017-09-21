@@ -269,6 +269,67 @@ class AstExprWrapper(ast.NodeTransformer):
             return node
 
 
+class AstOverrideOperators(ast.NodeTransformer):
+    """Wraps all (load) expressions in a call to piq.ObjectProxy()"""
+    def visit(self, node):
+        node = self.generic_visit(node)
+
+        def make_node(new_node):
+            return ast.copy_location(new_node, node)
+
+        def make_operator_node(name, args):
+            func = make_node(ast.Name(id='_piq_operator_' + name, ctx=ast.Load()))
+
+            return make_node(ast.Call(
+                func=func,
+                args=args,
+                keywords=[]
+            ))
+
+        def make_lazy_bool_operator_node(name, args):
+            def make_lazy_arg_node(body):
+                args = make_node(ast.arguments(
+                    args=[],
+                    vararg=None,
+                    kwarg=None,
+                    defaults=[]
+                ))
+                return make_node(ast.Lambda(
+                    args=args,
+                    body=body
+                ))
+
+            lazy_arg_nodes = [make_lazy_arg_node(x) for x in args]
+
+            return make_operator_node(name, lazy_arg_nodes)
+
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+            return make_lazy_bool_operator_node('and', node.values)
+
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            return make_lazy_bool_operator_node('or', node.values)
+
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return make_operator_node('not', [node.operand])
+
+        elif isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.In, ast.NotIn)):
+            # NOTE, XXX: not handling chained comparison operators, for example:
+            #
+            #    1 in 2 in 3
+            #    1 in 2 > 3
+            #    1 in 2 not in 3
+
+            in_node = make_operator_node('in', [node.left, node.comparators[0]])
+
+            if isinstance(node.ops[0], ast.In):
+                return in_node
+            else:
+                return make_operator_node('not', [in_node])
+
+        else:
+            return node
+
+
 class AbstractNamed(object):
     def __init__(self, name, loc):
         self.name = name
@@ -291,6 +352,23 @@ def make_named(name, loc):
     return AbstractNamed(name, loc)
 def make_splice(name, loc):
     return AbstractSplice(name, loc)
+
+# default implementation for overridden boolean operators
+def operator_and(*args):
+    for x in args:
+        if not x(): return False
+    return True
+
+def operator_or(*args):
+    for x in args:
+        if x(): return True
+    return False
+
+def operator_not(arg):
+    return (not arg)
+
+def operator_in(left, right):
+    return (left in right)
 
 
 # this is tweaked version of tokenize.Untokenizer.compact()
@@ -320,15 +398,23 @@ def parse_file(filename):
 # https://docs.python.org/2/library/ast.html
 # http://greentreesnakes.readthedocs.io/
 
-def parse_and_transform_file(filename):
-    source_ast = parse_file(filename)
-    return AstExprWrapper().visit(source_ast)
+def parse_and_transform_file(filename, transform_expressions=True, transform_operators=True):
+    ast = parse_file(filename)
+
+    if transform_expressions:
+        ast = AstExprWrapper().visit(ast)
+
+    if transform_operators:
+        ast = AstOverrideOperators().visit(ast)
+
+    return ast
 
 
-def exec_file(filename, user_globals=None):
-    transformed_ast = parse_and_transform_file(filename)
+def exec_file(filename, user_globals=None, transform_operators=False):
+    transformed_ast = parse_and_transform_file(filename, transform_operators=transform_operators)
 
     if user_globals is not None:
+        assert isinstance(user_globals, dict)
         exec_globals = user_globals
     else:
         exec_globals = {}
@@ -340,6 +426,12 @@ def exec_file(filename, user_globals=None):
         _piq_make_splice = make_splice
     ))
 
+    if transform_operators:
+        exec_globals.setdefault('_piq_operator_and', operator_and)
+        exec_globals.setdefault('_piq_operator_or', operator_or)
+        exec_globals.setdefault('_piq_operator_not', operator_not)
+        exec_globals.setdefault('_piq_operator_in', operator_in)
+
     exec(compile(transformed_ast, filename, 'exec'), exec_globals)
 
 
@@ -347,8 +439,13 @@ def main():
     arg_tokenize = False
     arg_tokenize_transform = False
     arg_parse = False
+
     arg_parse_transform = False
+    arg_transform_operators = False
+    arg_transform_expressions = False
+
     arg_abstract_output = False
+
 
     args = sys.argv[1:]
 
@@ -369,6 +466,14 @@ def main():
             arg_abstract_output = True
         elif a in ['-pt', '--parse-transform']:
             arg_parse_transform = True
+            arg_transform_expressions = True
+            arg_transform_operators = True
+        elif a in ['-pte', '--parse-transform-expressions']:
+            arg_parse_transform = True
+            arg_transform_expressions = True
+        elif a in ['-pto', '--parse-transform-operators']:
+            arg_parse_transform = True
+            arg_transform_operators = True
         elif a in ['-a', '--abstract-output']:
             arg_abstract_output = True
         elif a.startswith('-'):
@@ -413,12 +518,15 @@ def main():
         source_ast = parse_file(filename)
         print_ast(source_ast)
     elif arg_parse_transform:
-        transformed_ast = parse_and_transform_file(filename)
+        transformed_ast = parse_and_transform_file(
+                filename,
+                transform_operators=arg_transform_operators,
+                transform_expressions=arg_transform_expressions)
         print_ast(transformed_ast)
     else:
         # XXX
         try:
-            exec_file(filename)
+            exec_file(filename, transform_operators=True)
         except piq.ParseError as e:
             sys.stderr.write(filename + ':' + str(loc.line) + ': ' + error)
             sys.exit(1)
