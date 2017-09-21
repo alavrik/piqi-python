@@ -212,19 +212,28 @@ def transform_token_list(filename, l):
             i = skip_nl_and_comment_tokens(l, i, accu)
 
 
-def transform_tokens_common(filename, infile):
+def tokenize_common(infile):
     tokens = tokenize.generate_tokens(infile)
-    return transform_token_list(filename, list(tokens))
+    return list(tokens)
 
 
-def transform_tokens_from_string(s):
-    filename = '-'
-    return transform_tokens_common(filename, StringIO.StringIO(s).readline)
+def tokenize_string(s):
+    return tokenize_common(StringIO.StringIO(s).readline)
 
 
-def transform_tokens_from_file(filename):
+def tokenize_file(filename):
     with open(filename, 'rb') as infile:
-        return transform_tokens_common(filename, infile.readline)
+        return tokenize_common(infile.readline)
+
+
+def tokenize_and_transform_string(s, filename='-'):
+    tokens = tokenize_string(s)
+    return transform_token_list(filename, tokens)
+
+
+def tokenize_and_transform_file(filename):
+    tokens = tokenize_file(filename)
+    return transform_token_list(filename, tokens)
 
 
 class AstExprWrapper(ast.NodeTransformer):
@@ -284,17 +293,40 @@ def make_splice(name, loc):
     return AbstractSplice(name, loc)
 
 
+# this is tweaked version of tokenize.Untokenizer.compact()
+#
+def untokenize(tokens):
+    # stock Python's tokenize.untokenize() has a bug/omission when it doesn't
+    # correctly carry indent state upon switching from Untokenizer.untokenize()
+    # to Untokenizer.compat()
+    #
+    # to make it happy, we are forcing it to switch to Untokenizer.compat() on
+    # the first token
+    first_token = tokens[0]
+    tokens[0] = (first_token[0], first_token[1])
+
+    return tokenize.untokenize(tokens)
 
 
-def transform_ast(filename):
-    tokens = transform_tokens_from_file(filename)
-    source = tokenize.untokenize(tokens)
-    source_ast = ast.parse(source, filename, 'exec')
+def parse_file(filename):
+    tokens = tokenize_and_transform_file(filename)
+    source = untokenize(tokens)
+    return ast.parse(source, filename, 'exec')
+
+
+# for AST transformations see
+#
+# https://docs.python.org/3/library/ast.html
+# https://docs.python.org/2/library/ast.html
+# http://greentreesnakes.readthedocs.io/
+
+def parse_and_transform_file(filename):
+    source_ast = parse_file(filename)
     return AstExprWrapper().visit(source_ast)
 
 
 def exec_file(filename, user_globals=None):
-    source_ast = transform_ast(filename)
+    transformed_ast = parse_and_transform_file(filename)
 
     if user_globals is not None:
         exec_globals = user_globals
@@ -308,13 +340,15 @@ def exec_file(filename, user_globals=None):
         _piq_make_splice = make_splice
     ))
 
-    exec(compile(source_ast, filename, 'exec'), exec_globals)
+    exec(compile(transformed_ast, filename, 'exec'), exec_globals)
 
 
 def main():
-    arg_transform_tokens = False
-    arg_transform_ast = False
     arg_tokenize = False
+    arg_tokenize_transform = False
+    arg_parse = False
+    arg_parse_transform = False
+    arg_abstract_output = False
 
     args = sys.argv[1:]
 
@@ -327,10 +361,16 @@ def main():
 
         if a in ['-t', '--tokenize']:
             arg_tokenize = True
-        elif a in ['-tt', '--transform-tokens']:
-            arg_transform_tokens = True
-        elif a in ['-ta', '--transform-ast']:
-            arg_transform_ast = True
+            arg_abstract_output = True
+        elif a in ['-tt', '--tokenize-transform']:
+            arg_tokenize_transform = True
+        elif a in ['-p', '--parse']:
+            arg_parse = True
+            arg_abstract_output = True
+        elif a in ['-pt', '--parse-transform']:
+            arg_parse_transform = True
+        elif a in ['-a', '--abstract-output']:
+            arg_abstract_output = True
         elif a.startswith('-'):
             pass
         else:
@@ -340,26 +380,41 @@ def main():
     positional_arg = args[i]
     filename = positional_arg
 
+    def print_tokens(tokens):
+        if arg_abstract_output:
+            res = []
+            for token in tokens:
+                res.append((pytoken.tok_name[token[0]], token[1]))
+            print res
+        else:
+            print untokenize(tokens)
+
+    def print_ast(output_ast):
+        if arg_abstract_output:
+            try:
+                import astunparse
+                print astunparse.dump(output_ast)
+            except ImportError:
+                print ast.dump(output_ast)
+        else:
+            try:
+                import astunparse
+                print astunparse.unparse(output_ast)
+            except ImportError:
+                sys.exit("couldn't import 'astunparse'")
+
     if arg_tokenize:
-        out_tokens = transform_tokens_from_file(filename)
-
-        res = []
-        for token in out_tokens:
-            res.append((pytoken.tok_name[token[0]], token[1]))
-
-        print res
-    elif arg_transform_tokens:
-        out_tokens = transform_tokens_from_file(filename)
-        source = tokenize.untokenize(out_tokens)
-        print source
-    elif arg_transform_ast:
-        source_ast = transform_ast(filename)
-        #print ast.dump(source_ast)
-        #import astunparse
-        #print astunparse.unparse(source_ast)
-        #import astor
-        #print astor.to_source(source_ast)
-        print source_ast
+        tokens = tokenize_file(filename)
+        print_tokens(tokens)
+    elif arg_tokenize_transform:
+        tokens = tokenize_and_transform_file(filename)
+        print_tokens(tokens)
+    elif arg_parse:
+        source_ast = parse_file(filename)
+        print_ast(source_ast)
+    elif arg_parse_transform:
+        transformed_ast = parse_and_transform_file(filename)
+        print_ast(transformed_ast)
     else:
         # XXX
         try:
