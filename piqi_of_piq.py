@@ -2,6 +2,7 @@ import wrappers
 
 import piqi
 import piq
+import piqi_of_json
 
 
 # config
@@ -244,23 +245,8 @@ def parse_default(field_type, default):
     if default is None:
         return None
     else:
-        piq_ast = default_to_piq(default['json'])
-        return parse_obj(field_type, piq_ast)
-
-
-# TODO, XXX: do this conversion in piqic-python instead of runtime
-#
-# TODO: default records with repeated fields are handled incorrectly -- we need
-# piqobj_of_piq.py for that
-def default_to_piq(x):
-    if isinstance(x, list):
-        items = [default_to_piq(item) for item in x]
-        return piq.List(items, None)
-    elif isinstance(x, dict):
-        items = [piq.Named(k, None, default_to_piq(v)) for k, v in x.items()]
-        return piq.List(items, None)
-    else:  # scalar
-        return piq.Scalar(x, None)
+        # TODO, XXX: parse default in piqic-python instead of runtime
+        return piqi_of_json.parse_default(field_type, default)
 
 
 def find_first_parsed_field(t, field_type, l):

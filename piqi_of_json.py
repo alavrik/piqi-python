@@ -171,6 +171,7 @@ def parse_default(field_type, default):
     if default is None:
         return None
     else:
+        # TODO, XXX: parse default in piqic-python instead of runtime
         json = default['json']
         return parse_obj(field_type, json)
 
