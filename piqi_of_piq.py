@@ -24,6 +24,16 @@ class ParseError(Exception):
         self.loc = loc
 
 
+def make_scalar(x, loc):
+    if isinstance(x, piq.ObjectProxy):
+        # prevent leaking piq-wrapped objects into piqi objects, it could lead
+        # to all sorts of problems, including json.dumps() crashing on such
+        # values
+        assert False
+
+    return piqi.make_scalar(x, loc)
+
+
 # top-level call
 def parse(typename, x):
     # init parsing state
@@ -162,17 +172,17 @@ def do_parse_flag(t, l, loc=None):
     res, rem = find_flags(name, t.get('piq_alias'), l)
     if res == []:
         # missing flag implies False value
-        return piqi.make_scalar(False, loc), rem
+        return make_scalar(False, loc), rem
     else:
         x = res[0]
         maybe_report_duplicate_field(name, res)
         if isinstance(x, piq.Name) or (isinstance(x, piq.Named) and isinstance(x.value, piq.Scalar) and x.value.value == True):
             # flag is considered as present when it is represented either as name
             # w/o value or named boolean true value
-            return piqi.make_scalar(True, loc), rem
+            return make_scalar(True, loc), rem
         elif isinstance(x, piq.Named) and isinstance(x.value, piq.Scalar) and x.value.value == False:
              # flag is considered missing/unset when its value is false
-             return piqi.make_scalar(False, loc), rem
+             return make_scalar(False, loc), rem
         else:
              # there are no other possible representations of flags
              assert False
@@ -501,23 +511,23 @@ def parse_alias(t, x, try_mode=False, nested_variant=False, labeled=False):
 
 def parse_bool(x):
     if isinstance(x, piq.Scalar) and isinstance(x.value, bool):
-        return piqi.make_scalar(x.value, x.loc)
+        return make_scalar(x.value, x.loc)
     else:
         raise ParseError(x.loc, 'bool constant expected')
 
 
 def parse_int(x):
     if isinstance(x, piq.Scalar) and isinstance(x.value, int):
-        return piqi.make_scalar(x.value, x.loc)
+        return make_scalar(x.value, x.loc)
     else:
         raise ParseError(x.loc, 'int constant expected')
 
 
 def parse_float(x):
     if isinstance(x, piq.Scalar) and isinstance(x.value, float):
-        return piqi.make_scalar(x.value, x.loc)
+        return make_scalar(x.value, x.loc)
     elif isinstance(x, piq.Scalar) and isinstance(x.value, int):
-        return piqi.make_scalar(x.value * 1.0, x.loc)
+        return make_scalar(x.value * 1.0, x.loc)
     else:
         raise ParseError(x.loc, 'float constant expected')
 
@@ -525,14 +535,14 @@ def parse_float(x):
 def parse_string(x):
     if isinstance(x, piq.Scalar) and isinstance(x.value, basestring):
         # TODO: check for correct unicode
-        return piqi.make_scalar(x.value, x.loc)
+        return make_scalar(x.value, x.loc)
     elif isinstance(x, piq.Scalar) and isinstance(x.value, (int, float)) and piq_relaxed_parsing:
-        return piqi.make_scalar(str(x.value), x.loc)
+        return make_scalar(str(x.value), x.loc)
     elif isinstance(x, piq.Scalar) and isinstance(x.value, bool) and piq_relaxed_parsing:
         if x.value:
-            return piqi.make_scalar('true', x.loc)
+            return make_scalar('true', x.loc)
         else:
-            return piqi.make_scalar('false', x.loc)
+            return make_scalar('false', x.loc)
     else:
         raise ParseError(x.loc, 'string expected')
 
@@ -540,7 +550,7 @@ def parse_string(x):
 def parse_binary(x):
     if isinstance(x, piq.Scalar) and isinstance(x.value, basestring):
         # TODO: check for 8-bit characters
-        return piqi.make_scalar(x.value, x.loc)
+        return make_scalar(x.value, x.loc)
     else:
         raise ParseError(x.loc, 'binary expected')
 

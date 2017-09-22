@@ -61,21 +61,30 @@ def is_piq_node(x):
 
 
 # make piq AST node
+#
+# NOTE: this function can be called externally by code that constructs piq ASTs
 def make_node(x, is_inside_list=False):
+    # when called externally, terms won't be wrapped and won't inclue loc
+    # information
+    if isinstance(x, ObjectProxy):
+        loc = x.__loc__
+    else:
+        loc = None
+
     if is_piq_node(x):
         # already a Piq node
         return unwrap_object(x)
     elif isinstance(x, (bool, int, float, basestring)):
-        return Scalar(unwrap_object(x), x.__loc__)
+        return Scalar(unwrap_object(x), loc)
     elif isinstance(x, list):
         # XXX: support iterables?
         items = [make_node(item, is_inside_list=True) for item in x]
-        return List(items, x.__loc__)
+        return List(items, loc)
     elif hasattr(x, '__piq__'):
         return make_node(x.__piq__())
     else:
         raise ParseError(
-                x.__loc__,
+                loc,
                 "value of invalid type '{}': {}".format(type_name(x), x)
         )
 
