@@ -299,9 +299,10 @@ class AstOverrideOperators(ast.NodeTransformer):
                     body=body
                 ))
 
-            lazy_arg_nodes = [make_lazy_arg_node(x) for x in args]
+            first_eager_arg_node, rest_args = args[0], args[1:]
+            rest_lazy_arg_nodes = [make_lazy_arg_node(x) for x in rest_args]
 
-            return make_operator_node(name, lazy_arg_nodes)
+            return make_operator_node(name, [first_eager_arg_node] + rest_lazy_arg_nodes)
 
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
             return make_lazy_bool_operator_node('and', node.values)
@@ -353,22 +354,91 @@ def make_named(name, loc):
 def make_splice(name, loc):
     return AbstractSplice(name, loc)
 
-# default implementation for overridden boolean operators
-def operator_and(*args):
-    for x in args:
-        if not x(): return False
-    return True
 
-def operator_or(*args):
-    for x in args:
-        if x(): return True
-    return False
+def is_domain_boolean_expression(x):
+    return (
+            hasattr(x, '__bool_and__') and hasattr(x, '__bool_or__') and hasattr(x, '__bool_not__')
+    )
+
+
+def check_is_domain_boolean_expression(x):
+    # not allowed to mix domain boolean expressions and non-domain ones
+    #
+    # TODO, XXX: produce an actual error message, or leave such validation to
+    # domain implementation
+    assert is_domain_boolean_expression(x)
+
+
+def check_is_not_domain_boolean_expression(x):
+    assert not is_domain_boolean_expression(x)
+
+
+def operator_and(accu, *args):
+    def binary_and(accu, arg):
+        if is_domain_boolean_expression(accu):
+            arg = arg()
+            check_is_domain_boolean_expression(arg)
+            res = accu.__bool_and__(arg)
+            check_is_domain_boolean_expression(res)
+        else:
+            # standard boolean and evaluation
+            if not accu:
+                res = False  # short-circuit
+            else:
+                arg = arg()
+                check_is_not_domain_boolean_expression(arg)
+                res = (accu and arg)  # NOTE, XXX: equivalent to just arg
+        return res
+
+    for arg in args:
+        accu = binary_and(accu, arg)
+        if accu == False:
+            break  # short-circuit
+
+    return accu
+
+
+def operator_or(accu, *args):
+    def binary_or(accu, arg):
+        if is_domain_boolean_expression(accu):
+            arg = arg()
+            check_is_domain_boolean_expression(arg)
+            res = accu.__bool_or__(arg)
+            check_is_domain_boolean_expression(res)
+        else:
+            # standard boolean or evaluation
+            if accu:
+                res = accu
+            else:
+                arg = arg()
+                check_is_not_domain_boolean_expression(arg)
+                res = (accu or arg)  # NOTE, XXX: equivalent to just arg
+        return res
+
+    for arg in args:
+        accu = binary_or(accu, arg)
+        if accu and not is_domain_boolean_expression(accu):
+            break  # short-circuit
+
+    return accu
+
 
 def operator_not(arg):
-    return (not arg)
+    if is_domain_boolean_expression(arg):
+        res = arg.__bool_not__()
+        check_is_domain_boolean_expression(res)
+    else:
+        res = (not arg)
+    return res
+
 
 def operator_in(left, right):
-    return (left in right)
+    if hasattr(left, '__in__'):
+        res = left.__in__(right)
+        check_is_domain_boolean_expression(res)
+    else:
+        res = (left in right)
+    return res
 
 
 # this is tweaked version of tokenize.Untokenizer.compact()
@@ -423,14 +493,13 @@ def exec_file(filename, user_globals=None, transform_operators=False):
         _piq_wrap_object = wrap_object,
         _piq_make_name = make_name,
         _piq_make_named = make_named,
-        _piq_make_splice = make_splice
-    ))
+        _piq_make_splice = make_splice,
 
-    if transform_operators:
-        exec_globals.setdefault('_piq_operator_and', operator_and)
-        exec_globals.setdefault('_piq_operator_or', operator_or)
-        exec_globals.setdefault('_piq_operator_not', operator_not)
-        exec_globals.setdefault('_piq_operator_in', operator_in)
+        _piq_operator_and = operator_and,
+        _piq_operator_or = operator_or,
+        _piq_operator_not = operator_not,
+        _piq_operator_in = operator_in,
+    ))
 
     exec(compile(transformed_ast, filename, 'exec'), exec_globals)
 
