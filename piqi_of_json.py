@@ -216,7 +216,7 @@ def parse_enum(t, x):
         for o in option_spec_list:
             option_name = json_name_of_option(o)
             if option_name == x:
-                return piqi.make_enum(option_name, t['name'])
+                return piqi.make_enum(piqi.name_of_option(o), t['name'])
         raise ParseError("unknown enum option " + quote(x))
     else:
         raise ParseError('string enum value expected')
@@ -233,7 +233,7 @@ def parse_variant(t, x):
             option_name = json_name_of_option(o)
             if option_name == n:
                 value = parse_option(o, v)
-                return piqi.make_variant(option_name, value, t['name'])
+                return piqi.make_variant(piqi.name_of_option(o), value, t['name'])
         raise ParseError('unknown variant option ' + quote(n))
     else:
         raise ParseError('object expected')

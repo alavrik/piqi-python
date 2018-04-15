@@ -93,8 +93,9 @@ class Variant(tuple):
 
 # XXX: anything else? int code?
 class Tag(str):
-    def __init__(self, x):
-        super(str, self).__init__(make_name(x))
+    # overriding str "constructor", for details see https://stackoverflow.com/questions/7255655/how-to-subclass-str-in-python/33272874#33272874
+    def __new__(cls, x):
+        return super(Tag, cls).__new__(cls, make_name(x))
 
 
 class Enum(Tag):
